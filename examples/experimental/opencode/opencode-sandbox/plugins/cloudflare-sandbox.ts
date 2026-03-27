@@ -15,4 +15,6 @@ export const SandboxPlugin: Plugin = async (ctx) => {
 
   logger.info('starting server');
   createRPCSocket({ logger });
+
+  return {};
 };
