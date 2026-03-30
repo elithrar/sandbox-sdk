@@ -62,7 +62,13 @@ const getConfig = (env: Env): Config => ({
 const CODEMODE_API_TYPES = `\
 // Available inside the async function as \`sandbox.*\`:
 declare const sandbox: {
-  /** Run a shell command. Returns stdout, stderr, exitCode, success. */
+  /**
+   * Run a shell command and return its output.
+   * @example
+   * const { stdout } = await sandbox.exec({ command: 'ls -la /home/user' });
+   * @example
+   * const result = await sandbox.exec({ command: 'npm test', timeout: 30000 });
+   */
   exec(args: { command: string; timeout?: number }): Promise<{
     stdout: string;
     stderr: string;
@@ -70,21 +76,42 @@ declare const sandbox: {
     success: boolean;
   }>;
 
-  /** Write UTF-8 content to a file path in the sandbox. */
+  /**
+   * Write UTF-8 content to a file path in the sandbox. Creates parent directories as needed.
+   * @example
+   * await sandbox.writeFile({ path: '/home/user/hello.py', content: 'print("hello")' });
+   */
   writeFile(args: { path: string; content: string }): Promise<{ ok: boolean; path: string }>;
 
-  /** Read the full text content of a file from the sandbox. */
+  /**
+   * Read the full text content of a file from the sandbox.
+   * @example
+   * const { content } = await sandbox.readFile({ path: '/home/user/hello.py' });
+   */
   readFile(args: { path: string }): Promise<{ content: string }>;
 
-  /** List files and directories at a given path (default: '/'). */
+  /**
+   * List files and directories at a given path (default: '/').
+   * @example
+   * const { entries } = await sandbox.listFiles({ path: '/home/user' });
+   */
   listFiles(args?: { path?: string }): Promise<{ entries: unknown }>;
 };
 
 // Durable R2 storage, namespaced to the current session.
 declare const storage: {
-  /** Persist a string value under key. Overwrites any existing value. */
+  /**
+   * Persist a string value under key. Overwrites any existing value.
+   * @example
+   * await storage.put({ key: 'result', value: JSON.stringify({ score: 42 }) });
+   */
   put(args: { key: string; value: string }): Promise<{ ok: boolean }>;
-  /** Retrieve a value by key. Returns null if not found. */
+
+  /**
+   * Retrieve a value by key. Returns null if the key does not exist.
+   * @example
+   * const { value } = await storage.get({ key: 'result' });
+   */
   get(args: { key: string }): Promise<{ value: string | null }>;
 };
 
@@ -92,6 +119,8 @@ declare const storage: {
  * Fetch a web page and return its content as Markdown.
  * Uses Stagehand + Cloudflare Browser Rendering to fully render the page
  * (including JavaScript) before extracting readable content.
+ * @example
+ * const markdown = await webfetch('https://example.com');
  */
 declare function webfetch(url: string): Promise<string>;`;
 
@@ -114,7 +143,14 @@ class CodemodeRpcTarget extends RpcTarget {
     return CODEMODE_API_TYPES;
   }
 
-  /** Execute LLM-generated JavaScript in an isolated Dynamic Worker. */
+  /**
+   * Execute LLM-generated JavaScript in an isolated Dynamic Worker.
+   *
+   * Call `api()` first to obtain the TypeScript declarations for the globals
+   * (`sandbox`, `storage`, `webfetch`) that are available inside the executed
+   * function. The code must conform to those types — passing anything else will
+   * result in a runtime error.
+   */
   async run(
     code: string
   ): Promise<{ resultJson: string; logs: string[]; error?: string }> {
