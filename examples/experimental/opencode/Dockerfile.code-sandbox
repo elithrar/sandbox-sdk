@@ -1,4 +1,4 @@
-FROM docker.io/cloudflare/sandbox:0.7.19
+FROM docker.io/cloudflare/sandbox:0.8.0
 
 # Copy proxy CA certificates from the host (must precede any network operations)
 ARG CA_CERT_FILE=ca-certificates.crt

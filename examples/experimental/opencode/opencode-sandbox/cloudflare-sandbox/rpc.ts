@@ -2,13 +2,54 @@ import type { ISandbox } from '@cloudflare/sandbox';
 import { newBunWebSocketRpcSession, type RpcPromise, RpcTarget } from 'capnweb';
 import type Logger from './logger';
 
-export interface CloudflareSandbox {
-  sandbox(sessionId: string): RpcPromise<ISandbox>;
+export interface PluginApi {
+  ping(): RpcPromise<string>;
 }
 
-const { promise, resolve, reject } = Promise.withResolvers<CloudflareSandbox>();
+class PluginRpcTarget extends RpcTarget {
+  ping(): string {
+    return 'pong';
+  }
+}
 
-export async function getSandbox(): Promise<CloudflareSandbox> {
+export interface RunCodeResult {
+  resultJson: string;
+  logs: string[];
+  error?: string;
+}
+
+export interface ICodemode {
+  /** Return the TypeScript interface the LLM writes code against. */
+  api(): RpcPromise<string>;
+  /**
+   * Execute an async arrow function in an isolated Dynamic Worker.
+   * The function has access to `sandbox.*` and `storage.*` namespaces:
+   *
+   *   async () => {
+   *     await sandbox.writeFile({ path: '/main.js', content: '...' });
+   *     const r = await sandbox.exec({ command: 'node /main.js' });
+   *     await storage.put({ key: 'output.txt', value: r.stdout });
+   *     return r.stdout;
+   *   }
+   */
+  run(code: string): RpcPromise<RunCodeResult>;
+}
+
+export interface AgentApi {
+  sandbox(sessionId: string): RpcPromise<ISandbox>;
+  /** Returns a session-scoped codemode handle with api() and run(code). */
+  codemode(sessionId: string): RpcPromise<ICodemode>;
+  /**
+   * Fetch a web page and return its content as Markdown.
+   * The page is fully rendered by a headless browser (Stagehand + Browser
+   * Rendering) before conversion, so JavaScript-heavy pages work correctly.
+   */
+  webfetch(url: string): RpcPromise<string>;
+}
+
+const { promise, resolve, reject } = Promise.withResolvers<AgentApi>();
+
+export async function getSandbox(): Promise<AgentApi> {
   return promise;
 }
 
@@ -28,10 +69,10 @@ export function createRPCSocket({ logger }: { logger: Logger }) {
       open(ws) {
         const { stub, transport } = newBunWebSocketRpcSession(
           ws,
-          new RpcTarget()
+          new PluginRpcTarget()
         );
         ws.data = { transport };
-        resolve(stub as unknown as CloudflareSandbox);
+        resolve(stub as unknown as AgentApi);
       },
       message(ws, msg) {
         (ws.data as any).transport.dispatchMessage(msg);

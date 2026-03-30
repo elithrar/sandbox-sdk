@@ -5,6 +5,46 @@
   "compatibility_date": "2026-03-24",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  /**
+   * Browser Rendering — headless Chrome for webfetch().
+   * https://developers.cloudflare.com/browser-rendering/
+   */
+  "browser": {
+    "binding": "BROWSER"
+  },
+  /**
+   * Workers AI — used by Stagehand's LLM client inside webfetch().
+   */
+  "ai": {
+    "binding": "AI"
+  },
+  /**
+   * Playwright alias required by @browserbasehq/stagehand when not using
+   * the Cloudflare Vite plugin.
+   */
+  "alias": {
+    "playwright": "@cloudflare/playwright"
+  },
+  /**
+   * Worker Loader — spins up isolated Dynamic Workers to execute LLM-generated code.
+   * https://developers.cloudflare.com/workers/runtime-apis/bindings/worker-loader/
+   */
+  "worker_loaders": [
+    {
+      "binding": "CODEMODE_LOADER"
+    }
+  ],
+  /**
+   * R2 bucket — durable storage for agent outputs, namespaced by session.
+   * Create with: wrangler r2 bucket create opencode-storage
+   */
+  "r2_buckets": [
+    {
+      "binding": "STORAGE",
+      "bucket_name": "opencode-storage",
+      "preview_bucket_name": "opencode-storage-preview"
+    }
+  ],
   "containers": [
     {
       "class_name": "OpenCodeSandbox",

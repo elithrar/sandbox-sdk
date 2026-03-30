@@ -1,4 +1,4 @@
-FROM docker.io/cloudflare/sandbox:0.7.19
+FROM docker.io/cloudflare/sandbox:0.8.0
 
 # Copy proxy CA certificates from the host (must precede any network operations)
 ARG CA_CERT_FILE=ca-certificates.crt
@@ -24,6 +24,10 @@ RUN mkdir -p /home/user/project && \
     cd /home/user/project && \
     git init && \
     git commit --allow-empty -m "init"
+
+# Tell Bun and Node where the CA bundle lives so `bun install` can fetch
+# bespoke registry packages (e.g. pkg.pr.new) without cert errors.
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 
 # Install the sandbox plugin (sets up Cap'n Web RPC connection)
 RUN mkdir -p /home/user/project/

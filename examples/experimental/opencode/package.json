@@ -14,10 +14,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@browserbasehq/stagehand": "^2.5.0",
+    "@cloudflare/codemode": "^0.3.2",
     "@cloudflare/containers": "^0.2.0",
+    "@cloudflare/playwright": "^1.0.0",
     "@cloudflare/sandbox": "@cloudflare/sandbox",
-    "@opencode-ai/sdk": "^1.1.40",
-    "capnweb": "https://pkg.pr.new/cloudflare/capnweb@159"
+    "capnweb": "^0.6.1"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
