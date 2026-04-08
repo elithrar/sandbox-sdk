@@ -4381,7 +4381,7 @@ export class Sandbox<Env = unknown> extends Container<Env> implements ISandbox {
       Sandbox.validateBackupDir(dir, 'Invalid backup: dir');
 
       // Step 1: Read metadata to check TTL
-      const metaKey = `backups/${id}/meta.json`;
+      const metaKey = `${BACKUP_STORAGE_PREFIX}/${id}/${BACKUP_METADATA_OBJECT_NAME}`;
       const metaObject = await bucket.get(metaKey);
       if (!metaObject) {
         throw new BackupNotFoundError({
@@ -4431,7 +4431,7 @@ export class Sandbox<Env = unknown> extends Container<Env> implements ISandbox {
       }
 
       // Step 2: Check archive exists via HEAD (no body stream)
-      const r2Key = `backups/${id}/data.sqsh`;
+      const r2Key = `${BACKUP_STORAGE_PREFIX}/${id}/${BACKUP_ARCHIVE_OBJECT_NAME}`;
       const archiveHead = await bucket.head(r2Key);
       if (!archiveHead) {
         throw new BackupNotFoundError({
@@ -4446,7 +4446,7 @@ export class Sandbox<Env = unknown> extends Container<Env> implements ISandbox {
       }
 
       backupSession = await this.ensureBackupSession();
-      const r2MountPath = `/var/backups/r2mount/${id}`;
+      const r2MountPath = `${BACKUP_CONTAINER_DIR}/r2mount/${id}`;
       const archivePath = `${r2MountPath}/data.sqsh`;
 
       // Step 3: Tear down existing restore mounts before replacing the backing
@@ -4504,6 +4504,16 @@ export class Sandbox<Env = unknown> extends Container<Env> implements ISandbox {
       };
     } catch (error) {
       caughtError = error instanceof Error ? error : new Error(String(error));
+      // Clean up archive file on failure only — squashfuse needs it as
+      // backing storage for the lifetime of the mount
+      if (id && backupSession) {
+        const archivePath = `${BACKUP_CONTAINER_DIR}/${id}.sqsh`;
+        await this.execWithSession(
+          `rm -f ${shellEscape(archivePath)}`,
+          backupSession,
+          { origin: 'internal' }
+        ).catch(() => {});
+      }
       throw error;
     } finally {
       if (backupSession) {
@@ -4574,7 +4584,7 @@ export class Sandbox<Env = unknown> extends Container<Env> implements ISandbox {
       Sandbox.validateBackupDir(dir, 'Invalid backup: dir');
 
       // Step 1: Read metadata to check TTL
-      const metaKey = `backups/${id}/meta.json`;
+      const metaKey = `${BACKUP_STORAGE_PREFIX}/${id}/${BACKUP_METADATA_OBJECT_NAME}`;
       const metaObject = await bucket.get(metaKey);
       if (!metaObject) {
         throw new BackupNotFoundError({
@@ -4624,7 +4634,7 @@ export class Sandbox<Env = unknown> extends Container<Env> implements ISandbox {
       }
 
       // Step 2: Download archive from R2 via binding and write to container
-      const r2Key = `backups/${id}/data.sqsh`;
+      const r2Key = `${BACKUP_STORAGE_PREFIX}/${id}/${BACKUP_ARCHIVE_OBJECT_NAME}`;
       const archiveObject = await bucket.get(r2Key);
       if (!archiveObject) {
         throw new BackupNotFoundError({
@@ -4639,15 +4649,19 @@ export class Sandbox<Env = unknown> extends Container<Env> implements ISandbox {
       }
 
       backupSession = await this.ensureBackupSession();
-      const archivePath = `/var/backups/${id}.sqsh`;
+      const archivePath = `${BACKUP_CONTAINER_DIR}/${id}.sqsh`;
 
       const archiveBuffer = await archiveObject.arrayBuffer();
       const base64Content = Buffer.from(archiveBuffer).toString('base64');
 
-      // Ensure /var/backups exists
-      await this.execWithSession('mkdir -p /var/backups', backupSession, {
-        origin: 'internal'
-      });
+      // Ensure backup directory exists
+      await this.execWithSession(
+        `mkdir -p ${BACKUP_CONTAINER_DIR}`,
+        backupSession,
+        {
+          origin: 'internal'
+        }
+      );
 
       const writeResult = await this.client.files.writeFile(
         archivePath,
@@ -4709,7 +4723,7 @@ export class Sandbox<Env = unknown> extends Container<Env> implements ISandbox {
     } catch (error) {
       caughtError = error instanceof Error ? error : new Error(String(error));
       if (id && backupSession) {
-        const archivePath = `/var/backups/${id}.sqsh`;
+        const archivePath = `${BACKUP_CONTAINER_DIR}/${id}.sqsh`;
         await this.execWithSession(
           `rm -f ${shellEscape(archivePath)}`,
           backupSession,
