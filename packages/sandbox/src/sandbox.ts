@@ -123,6 +123,13 @@ const sandboxConfigurationCache = new WeakMap<
   Map<string, CachedSandboxConfiguration>
 >();
 
+const BACKUP_DEFAULT_TTL_SECONDS = 259200;
+const BACKUP_MAX_NAME_LENGTH = 256;
+const BACKUP_CONTAINER_DIR = '/var/backups';
+const BACKUP_STORAGE_PREFIX = 'backups';
+const BACKUP_ARCHIVE_OBJECT_NAME = 'data.sqsh';
+const BACKUP_METADATA_OBJECT_NAME = 'meta.json';
+
 function getNamespaceConfigurationCache(
   namespace: object
 ): Map<string, CachedSandboxConfiguration> {
@@ -3935,12 +3942,10 @@ export class Sandbox<Env = unknown> extends Container<Env> implements ISandbox {
   ): Promise<DirectoryBackup> {
     const bucket = this.requireBackupBucket();
     this.requirePresignedUrlSupport();
-    const DEFAULT_TTL_SECONDS = 259200; // 3 days
-    const MAX_NAME_LENGTH = 256;
     const {
       dir,
       name,
-      ttl = DEFAULT_TTL_SECONDS,
+      ttl = BACKUP_DEFAULT_TTL_SECONDS,
       gitignore = false,
       excludes = []
     } = options;
@@ -3955,13 +3960,13 @@ export class Sandbox<Env = unknown> extends Container<Env> implements ISandbox {
     try {
       Sandbox.validateBackupDir(dir, 'BackupOptions.dir');
       if (name !== undefined) {
-        if (typeof name !== 'string' || name.length > MAX_NAME_LENGTH) {
+        if (typeof name !== 'string' || name.length > BACKUP_MAX_NAME_LENGTH) {
           throw new InvalidBackupConfigError({
-            message: `BackupOptions.name must be a string of at most ${MAX_NAME_LENGTH} characters`,
+            message: `BackupOptions.name must be a string of at most ${BACKUP_MAX_NAME_LENGTH} characters`,
             code: ErrorCode.INVALID_BACKUP_CONFIG,
             httpStatus: 400,
             context: {
-              reason: `name must be a string of at most ${MAX_NAME_LENGTH} characters`
+              reason: `name must be a string of at most ${BACKUP_MAX_NAME_LENGTH} characters`
             },
             timestamp: new Date().toISOString()
           });
@@ -4013,7 +4018,7 @@ export class Sandbox<Env = unknown> extends Container<Env> implements ISandbox {
 
       backupSession = await this.ensureBackupSession();
       backupId = crypto.randomUUID();
-      const archivePath = `/var/backups/${backupId}.sqsh`;
+      const archivePath = `${BACKUP_CONTAINER_DIR}/${backupId}.sqsh`;
 
       const createResult = await this.client.backup.createArchive(
         dir,
@@ -4034,8 +4039,8 @@ export class Sandbox<Env = unknown> extends Container<Env> implements ISandbox {
       }
 
       sizeBytes = createResult.sizeBytes;
-      const r2Key = `backups/${backupId}/data.sqsh`;
-      const metaKey = `backups/${backupId}/meta.json`;
+      const r2Key = `${BACKUP_STORAGE_PREFIX}/${backupId}/${BACKUP_ARCHIVE_OBJECT_NAME}`;
+      const metaKey = `${BACKUP_STORAGE_PREFIX}/${backupId}/${BACKUP_METADATA_OBJECT_NAME}`;
 
       // Step 2: Upload archive to R2 via presigned URL (isolated backup session)
       await this.uploadBackupPresigned(
@@ -4072,9 +4077,9 @@ export class Sandbox<Env = unknown> extends Container<Env> implements ISandbox {
       caughtError = error instanceof Error ? error : new Error(String(error));
       // Clean up local archive and any partially-uploaded R2 objects
       if (backupId && backupSession) {
-        const archivePath = `/var/backups/${backupId}.sqsh`;
-        const r2Key = `backups/${backupId}/data.sqsh`;
-        const metaKey = `backups/${backupId}/meta.json`;
+        const archivePath = `${BACKUP_CONTAINER_DIR}/${backupId}.sqsh`;
+        const r2Key = `${BACKUP_STORAGE_PREFIX}/${backupId}/${BACKUP_ARCHIVE_OBJECT_NAME}`;
+        const metaKey = `${BACKUP_STORAGE_PREFIX}/${backupId}/${BACKUP_METADATA_OBJECT_NAME}`;
         await this.execWithSession(
           `rm -f ${shellEscape(archivePath)}`,
           backupSession,
@@ -4109,12 +4114,10 @@ export class Sandbox<Env = unknown> extends Container<Env> implements ISandbox {
   private async doCreateBackupLocal(
     options: BackupOptions
   ): Promise<DirectoryBackup> {
-    const DEFAULT_TTL_SECONDS = 259200; // 3 days
-    const MAX_NAME_LENGTH = 256;
     const {
       dir,
       name,
-      ttl = DEFAULT_TTL_SECONDS,
+      ttl = BACKUP_DEFAULT_TTL_SECONDS,
       gitignore = false,
       excludes = []
     } = options;
@@ -4128,7 +4131,7 @@ export class Sandbox<Env = unknown> extends Container<Env> implements ISandbox {
 
     // Resolve backup bucket from env as an R2 binding
     const envObj = this.env as Record<string, unknown>;
-    const bucket = envObj['BACKUP_BUCKET'];
+    const bucket = envObj.BACKUP_BUCKET;
     if (!bucket || !isR2Bucket(bucket)) {
       throw new InvalidBackupConfigError({
         message:
@@ -4144,13 +4147,13 @@ export class Sandbox<Env = unknown> extends Container<Env> implements ISandbox {
     try {
       Sandbox.validateBackupDir(dir, 'BackupOptions.dir');
       if (name !== undefined) {
-        if (typeof name !== 'string' || name.length > MAX_NAME_LENGTH) {
+        if (typeof name !== 'string' || name.length > BACKUP_MAX_NAME_LENGTH) {
           throw new InvalidBackupConfigError({
-            message: `BackupOptions.name must be a string of at most ${MAX_NAME_LENGTH} characters`,
+            message: `BackupOptions.name must be a string of at most ${BACKUP_MAX_NAME_LENGTH} characters`,
             code: ErrorCode.INVALID_BACKUP_CONFIG,
             httpStatus: 400,
             context: {
-              reason: `name must be a string of at most ${MAX_NAME_LENGTH} characters`
+              reason: `name must be a string of at most ${BACKUP_MAX_NAME_LENGTH} characters`
             },
             timestamp: new Date().toISOString()
           });
@@ -4199,7 +4202,7 @@ export class Sandbox<Env = unknown> extends Container<Env> implements ISandbox {
 
       backupSession = await this.ensureBackupSession();
       backupId = crypto.randomUUID();
-      const archivePath = `/var/backups/${backupId}.sqsh`;
+      const archivePath = `${BACKUP_CONTAINER_DIR}/${backupId}.sqsh`;
 
       // Step 1: Create squashfs archive in the container (same as production)
       const createResult = await this.client.backup.createArchive(
@@ -4221,8 +4224,8 @@ export class Sandbox<Env = unknown> extends Container<Env> implements ISandbox {
       }
 
       sizeBytes = createResult.sizeBytes;
-      const r2Key = `backups/${backupId}/data.sqsh`;
-      const metaKey = `backups/${backupId}/meta.json`;
+      const r2Key = `${BACKUP_STORAGE_PREFIX}/${backupId}/${BACKUP_ARCHIVE_OBJECT_NAME}`;
+      const metaKey = `${BACKUP_STORAGE_PREFIX}/${backupId}/${BACKUP_METADATA_OBJECT_NAME}`;
 
       // Step 2: Read archive from container via file streaming, upload to R2 via binding
       const archiveStream = await this.client.files.readFileStream(
@@ -4272,9 +4275,9 @@ export class Sandbox<Env = unknown> extends Container<Env> implements ISandbox {
     } catch (error) {
       caughtError = error instanceof Error ? error : new Error(String(error));
       if (backupId && backupSession) {
-        const archivePath = `/var/backups/${backupId}.sqsh`;
-        const r2Key = `backups/${backupId}/data.sqsh`;
-        const metaKey = `backups/${backupId}/meta.json`;
+        const archivePath = `${BACKUP_CONTAINER_DIR}/${backupId}.sqsh`;
+        const r2Key = `${BACKUP_STORAGE_PREFIX}/${backupId}/${BACKUP_ARCHIVE_OBJECT_NAME}`;
+        const metaKey = `${BACKUP_STORAGE_PREFIX}/${backupId}/${BACKUP_METADATA_OBJECT_NAME}`;
         await this.execWithSession(
           `rm -f ${shellEscape(archivePath)}`,
           backupSession,
@@ -4534,7 +4537,7 @@ export class Sandbox<Env = unknown> extends Container<Env> implements ISandbox {
 
     // Resolve backup bucket from env as an R2 binding
     const envObj = this.env as Record<string, unknown>;
-    const bucket = envObj['BACKUP_BUCKET'];
+    const bucket = envObj.BACKUP_BUCKET;
     if (!bucket || !isR2Bucket(bucket)) {
       throw new InvalidBackupConfigError({
         message:
