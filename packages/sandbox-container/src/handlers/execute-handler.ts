@@ -128,6 +128,17 @@ export class ExecuteHandler extends BaseHandler<Request, Response> {
 
     const process = processResult.data;
 
+    // Hoist listener references so cancel() can access them
+    let outputListener:
+      | ((stream: 'stdout' | 'stderr', data: string) => void)
+      | undefined;
+    let statusListener: ((status: string) => void) | undefined;
+
+    const removeListeners = () => {
+      if (outputListener) process.outputListeners.delete(outputListener);
+      if (statusListener) process.statusListeners.delete(statusListener);
+    };
+
     // Create SSE stream
     const stream = new ReadableStream({
       start(controller) {
@@ -159,7 +170,7 @@ export class ExecuteHandler extends BaseHandler<Request, Response> {
         }
 
         // Set up output listeners for future output
-        const outputListener = (stream: 'stdout' | 'stderr', data: string) => {
+        outputListener = (stream: 'stdout' | 'stderr', data: string) => {
           try {
             const eventData = `data: ${JSON.stringify({
               type: stream, // 'stdout' or 'stderr' directly
@@ -170,13 +181,12 @@ export class ExecuteHandler extends BaseHandler<Request, Response> {
           } catch (err) {
             if (err instanceof TypeError) {
               // Stream was closed or cancelled — just cleanup
-              process.outputListeners.delete(outputListener);
-              process.statusListeners.delete(statusListener);
+              removeListeners();
             }
           }
         };
 
-        const statusListener = (status: string) => {
+        statusListener = (status: string) => {
           // Close stream when process completes
           if (['completed', 'failed', 'killed', 'error'].includes(status)) {
             try {
@@ -190,8 +200,7 @@ export class ExecuteHandler extends BaseHandler<Request, Response> {
             } catch (err) {
               if (err instanceof TypeError) {
                 // Stream already closed — just cleanup
-                process.outputListeners.delete(outputListener);
-                process.statusListeners.delete(statusListener);
+                removeListeners();
               }
             }
           }
@@ -216,17 +225,14 @@ export class ExecuteHandler extends BaseHandler<Request, Response> {
           } catch (err) {
             if (err instanceof TypeError) {
               // Stream already closed — just cleanup
-              process.outputListeners.delete(outputListener);
-              process.statusListeners.delete(statusListener);
+              removeListeners();
             }
           }
         }
 
-        // Cleanup when stream is cancelled
-        return () => {
-          process.outputListeners.delete(outputListener);
-          process.statusListeners.delete(statusListener);
-        };
+      },
+      cancel() {
+        removeListeners();
       }
     });
 
